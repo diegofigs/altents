@@ -3,6 +3,7 @@ import { CodeResult } from "near-api-js/lib/providers/provider";
 import assert from "node:assert";
 import { Config } from "wagmi";
 import { signMessage } from "wagmi/actions";
+import { UnifiedAsset } from "./tokens";
 import { generateNonce, transformERC191Signature } from "./utils";
 
 export interface Token {
@@ -14,6 +15,19 @@ export interface Token {
   price_updated_at: string;
   symbol: string;
 }
+
+export interface BridgeableToken {
+  asset_name: string;
+  decimals: number;
+  defuse_asset_identifier: string;
+  min_deposit_amount: string;
+  min_withdrawal_amount: string;
+  near_token_id: string;
+  withdrawal_fee: number;
+}
+
+export type AggregatedAsset = Token & UnifiedAsset;
+export type BridgeableAsset = BridgeableToken & UnifiedAsset;
 
 export interface Quote {
   quote_hash: string;
@@ -46,6 +60,7 @@ interface JsonRpcResponse<T> {
  * to the Chaindefuser Bridge at https://bridge.chaindefuser.com/rpc
  */
 export async function sendJsonRpcRequest<T>(
+  url: string,
   method: string,
   params: unknown,
 ): Promise<T> {
@@ -57,16 +72,13 @@ export async function sendJsonRpcRequest<T>(
   };
 
   try {
-    const response = await fetch(
-      "https://solver-relay-v2.chaindefuser.com/rpc",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify(body),
+    });
     const data: JsonRpcResponse<T> = await response.json();
 
     if (data.error) {
@@ -141,7 +153,11 @@ export async function fetchQuote({
       defuse_asset_identifier_out: outputTokenId,
       exact_amount_in: exactAmountIn,
     };
-    const quoteResponse = await sendJsonRpcRequest<Quote[]>("quote", params);
+    const quoteResponse = await sendJsonRpcRequest<Quote[]>(
+      "https://solver-relay-v2.chaindefuser.com/rpc",
+      "quote",
+      params,
+    );
     if (quoteResponse && quoteResponse.length > 0) {
       return quoteResponse[0];
     }
@@ -204,16 +220,96 @@ export async function publishIntent({
     };
 
     const response = await sendJsonRpcRequest<PublishIntentResponse>(
+      "https://solver-relay-v2.chaindefuser.com/rpc",
       "publish_intent",
       intentParams,
     );
     if (response.status === "OK") {
-      console.log("Swap intent published successfully!");
-    } else {
-      console.warn(`Swap failed: ${response.reason || "Unknown error"}`);
+      return true;
     }
+    return false;
   } catch (err) {
     console.error(`Failed to publish swap intent: ${err}`);
+    return false;
+  }
+}
+
+type GetIntentStatusParams = {
+  intentHash: string;
+};
+
+interface GetIntentStatusResponse {
+  status:
+    | "PENDING"
+    | "TX_BROADCASTED"
+    | "SETTLED"
+    | "NOT_FOUND_OR_NOT_VALID_ANYMORE";
+  intent_hash: string;
+}
+
+export async function getIntentStatus({ intentHash }: GetIntentStatusParams) {
+  try {
+    const intentParams = {
+      intent_hash: intentHash,
+    };
+
+    const response = await sendJsonRpcRequest<GetIntentStatusResponse>(
+      "https://solver-relay-v2.chaindefuser.com/rpc",
+      "get_status",
+      intentParams,
+    );
+    return response.status;
+  } catch (err) {
+    console.error(`Failed to get intent status: ${err}`);
+    return "NOT_FOUND_OR_NOT_VALID_ANYMORE";
+  }
+}
+
+type GetSupportedTokensParams = {
+  chains?: string[];
+};
+
+interface GetSupportedTokensResponse {
+  tokens?: BridgeableToken[];
+}
+
+export async function getSupportedTokens(
+  params: GetSupportedTokensParams = {},
+) {
+  try {
+    const response = await sendJsonRpcRequest<GetSupportedTokensResponse>(
+      "https://bridge.chaindefuser.com/rpc",
+      "supported_tokens",
+      params,
+    );
+    return response.tokens;
+  } catch (err) {
+    console.error(`Failed to get supported tokens: ${err}`);
+    throw err;
+  }
+}
+
+type GetDepositAddressParams = {
+  accountId: string;
+  chain: string;
+};
+
+interface GetDepositAddressResponse {
+  address: string;
+  chain: string;
+}
+
+export async function getDepositAddress(params: GetDepositAddressParams) {
+  try {
+    const response = await sendJsonRpcRequest<GetDepositAddressResponse>(
+      "https://bridge.chaindefuser.com/rpc",
+      "deposit_address",
+      { ...params, account_id: params.accountId.toLowerCase() },
+    );
+    return response.address;
+  } catch (err) {
+    console.error(`Failed to get deposit address: ${err}`);
+    throw err;
   }
 }
 

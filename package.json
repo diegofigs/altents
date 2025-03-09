@@ -15,6 +15,8 @@
     "@scure/base": "^1.2.4",
     "@tailwindcss/vite": "^4.0.9",
     "@tanstack/react-query": "^5.67.1",
+    "@tanstack/react-router": "^1.112.18",
+    "@wagmi/cli": "^2.2.0",
     "crypto-browserify": "^3.12.1",
     "near-api-js": "^5.0.1",
     "react": "^19.0.0",
@@ -27,6 +29,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
+    "@tanstack/router-devtools": "^1.112.18",
+    "@tanstack/router-plugin": "^1.113.0",
     "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",

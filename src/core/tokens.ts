@@ -948,9 +948,11 @@ export interface UnifiedAsset {
   name: string;
   decimals: number;
   icon?: string;
+  address?: string;
   // Optionally track chainName, tags, etc.
   chainName?: string;
   tags?: string[];
+  groupedTokens?: (typeof LIST_TOKENS)[number]["groupedTokens"];
 }
 
 /**
@@ -978,6 +980,8 @@ export function getUnifiedTokenList(): UnifiedAsset[] {
         icon: chosen.icon,
         chainName: chosen.chainName,
         tags: tokenEntry.tags ?? [],
+        address: chosen.address || tokenEntry.address,
+        groupedTokens: tokenEntry.groupedTokens,
       };
     } else {
       // No groupedTokens? Then we assume the token itself is the single variant
@@ -989,6 +993,8 @@ export function getUnifiedTokenList(): UnifiedAsset[] {
         icon: tokenEntry.icon,
         chainName: tokenEntry.chainName,
         tags: tokenEntry.tags ?? [],
+        address: tokenEntry.address,
+        groupedTokens: tokenEntry.groupedTokens,
       };
     }
   });
