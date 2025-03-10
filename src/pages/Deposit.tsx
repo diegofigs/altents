@@ -290,13 +290,7 @@ export function Deposit() {
     );
   }
 
-  console.log(
-    assets,
-    platformAssets,
-    selectedSymbol,
-    selectedDefuseAssetId,
-    depositAddress,
-  );
+  console.log(selectedSymbol, selectedDefuseAssetId, depositAddress);
 
   return (
     <main className="h-full flex-grow flex items-center justify-center px-4 py-8">
