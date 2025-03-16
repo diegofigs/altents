@@ -11,9 +11,11 @@ export const Route = createRootRoute({
       <>
         <div className="bg-gray-800 text-gray-100 min-h-screen min-w-screen flex flex-col justify-between">
           <header className="py-4 px-6 w-full flex justify-between items-center border-b border-gray-700">
-            <h1 className="text-4xl font-bold tracking-tight">
-              <span className="text-blue-500">alt</span>ents
-            </h1>
+            <Link to="/">
+              <h1 className="text-4xl font-bold tracking-tight">
+                <span className="text-blue-500">alt</span>ents
+              </h1>
+            </Link>
             <nav className="flex gap-4">
               <Link to="/deposit" className="[&.active]:font-bold">
                 Deposit
@@ -50,7 +52,7 @@ export const Route = createRootRoute({
           </footer>
         </div>
         <ToastContainer theme="dark" />
-        {!import.meta.env.DEV && <TanStackRouterDevtools />}
+        {import.meta.env.DEV && <TanStackRouterDevtools />}
       </>
     );
   },
