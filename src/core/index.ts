@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from "near-api-js/lib/providers";
 import { CodeResult } from "near-api-js/lib/providers/provider";
 import assert from "node:assert";
+import { toast } from "react-toastify";
 import { Config } from "wagmi";
 import { signMessage } from "wagmi/actions";
 import { UnifiedAsset } from "./tokens";
@@ -166,7 +167,7 @@ export async function fetchQuote({
   }
 }
 
-type PublishIntentParams = {
+type PublishSwapIntentParams = {
   config: Config;
   inputTokenId: string;
   outputTokenId: string;
@@ -186,52 +187,94 @@ export async function publishIntent({
   outputTokenId,
   quote,
   address,
-}: PublishIntentParams) {
-  try {
-    const quoteHash = quote?.quote_hash;
-    const signerId = address.toLowerCase();
-    const nonce = await generateNonce(signerId);
-    const message = {
-      signer_id: signerId,
-      verifying_contract: "intents.near",
-      deadline: quote?.expiration_time,
-      nonce,
-      intents: [
-        {
-          intent: "token_diff",
-          diff: {
-            [inputTokenId]: `-${quote?.amount_in}`,
-            [outputTokenId]: quote?.amount_out,
-          },
+}: PublishSwapIntentParams) {
+  const quoteHash = quote?.quote_hash;
+  const signerId = address.toLowerCase();
+  const nonce = await generateNonce(signerId);
+  const message = {
+    signer_id: signerId,
+    verifying_contract: "intents.near",
+    deadline: quote?.expiration_time,
+    nonce,
+    intents: [
+      {
+        intent: "token_diff",
+        diff: {
+          [inputTokenId]: `-${quote?.amount_in}`,
+          [outputTokenId]: quote?.amount_out,
         },
-      ],
-    };
-    const messageStr = JSON.stringify(message, null, 2);
-    const signature = await signMessage(config, {
-      message: messageStr,
-    });
-    const intentParams = {
-      quote_hashes: [quoteHash],
-      signed_data: {
-        standard: "erc191",
-        payload: messageStr,
-        signature: transformERC191Signature(signature),
       },
-    };
+    ],
+  };
+  const messageStr = JSON.stringify(message, null, 2);
+  const signature = await signMessage(config, {
+    message: messageStr,
+  });
+  const intentParams = {
+    quote_hashes: [quoteHash],
+    signed_data: {
+      standard: "erc191",
+      payload: messageStr,
+      signature: transformERC191Signature(signature),
+    },
+  };
 
-    const response = await sendJsonRpcRequest<PublishIntentResponse>(
-      "https://solver-relay-v2.chaindefuser.com/rpc",
-      "publish_intent",
-      intentParams,
-    );
-    if (response.status === "OK") {
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.error(`Failed to publish swap intent: ${err}`);
-    return false;
-  }
+  const response = await sendJsonRpcRequest<PublishIntentResponse>(
+    "https://solver-relay-v2.chaindefuser.com/rpc",
+    "publish_intent",
+    intentParams,
+  );
+  return response;
+}
+
+type PublishWithdrawIntentParams = {
+  config: Config;
+  nearToken: string;
+  amount: string;
+  address: string;
+};
+
+export async function publishWithdrawIntent({
+  config,
+  nearToken,
+  amount,
+  address,
+}: PublishWithdrawIntentParams) {
+  const signerId = address.toLowerCase();
+  const nonce = await generateNonce(signerId);
+  const message = {
+    signer_id: signerId,
+    verifying_contract: "intents.near",
+    deadline: new Date(new Date().getTime() + 60 * 10 * 1000).toISOString(),
+    nonce,
+    intents: [
+      {
+        intent: "ft_withdraw",
+        token: nearToken,
+        receiver_id: nearToken,
+        amount,
+        memo: `WITHDRAW_TO:${address}`,
+      },
+    ],
+  };
+  const messageStr = JSON.stringify(message, null, 2);
+  const signature = await signMessage(config, {
+    message: messageStr,
+  });
+  const intentParams = {
+    signed_data: {
+      standard: "erc191",
+      payload: messageStr,
+      signature: transformERC191Signature(signature),
+    },
+  };
+
+  const response = await sendJsonRpcRequest<PublishIntentResponse>(
+    "https://solver-relay-v2.chaindefuser.com/rpc",
+    "publish_intent",
+    intentParams,
+  );
+  return response;
 }
 
 type GetIntentStatusParams = {
@@ -245,6 +288,9 @@ interface GetIntentStatusResponse {
     | "SETTLED"
     | "NOT_FOUND_OR_NOT_VALID_ANYMORE";
   intent_hash: string;
+  data?: {
+    hash?: string; // e.g. transaction hash
+  };
 }
 
 export async function getIntentStatus({ intentHash }: GetIntentStatusParams) {
@@ -258,9 +304,12 @@ export async function getIntentStatus({ intentHash }: GetIntentStatusParams) {
       "get_status",
       intentParams,
     );
+
+    // The server returns an object with "status" and optionally "data"
     return response.status;
   } catch (err) {
-    console.error(`Failed to get intent status: ${err}`);
+    console.error(`Failed to get intent status for ${intentHash}:`, err);
+    // Fall back to the “NOT_FOUND…” so we can treat it as invalid
     return "NOT_FOUND_OR_NOT_VALID_ANYMORE";
   }
 }
@@ -355,4 +404,71 @@ export async function getDepositedBalances(
   }
 
   return result;
+}
+
+// An object to label each status
+const STATUS_LABELS = {
+  PENDING: "Pending",
+  TX_BROADCASTED: "Transaction Broadcasted",
+  SETTLED: "Settled",
+  NOT_FOUND_OR_NOT_VALID_ANYMORE: "Invalid or Expired",
+} as const;
+
+export async function pollIntentStatus(intentHash: string) {
+  // Create an initial toast (you could store toastId if you want to update it in place)
+  const toastId = toast(`Intent ${intentHash} - Checking status...`, {
+    // so we can update it later
+  });
+
+  const maxTries = 50; // 10s / 200ms
+  for (let i = 0; i < maxTries; i++) {
+    try {
+      const status = await getIntentStatus({ intentHash });
+
+      // We'll update the toast with the latest status
+      toast.update(toastId, {
+        render: `Intent status: ${STATUS_LABELS[status] || status}`,
+        type: "info",
+        // keep the toast open
+        autoClose: false,
+      });
+
+      if (status === "SETTLED") {
+        // final success update
+        toast.update(toastId, {
+          render: "🎉 Intent Settled!",
+          type: "success",
+          autoClose: 5000,
+        });
+        return;
+      }
+      if (status === "NOT_FOUND_OR_NOT_VALID_ANYMORE") {
+        // final failure update
+        toast.update(toastId, {
+          render: "❌ Deposit / Intent not valid anymore",
+          type: "error",
+          autoClose: 5000,
+        });
+        return;
+      }
+
+      // If still "PENDING" or "TX_BROADCASTED", wait 200ms, then try again
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } catch (err) {
+      // if an error occurs, we can log or show a toast
+      toast.update(toastId, {
+        render: `Error checking status: ${String(err)}`,
+        type: "error",
+        autoClose: 5000,
+      });
+      return;
+    }
+  }
+
+  // If we exit the loop, we timed out
+  toast.update(toastId, {
+    render: "Timed out waiting for settlement.",
+    type: "warning",
+    autoClose: 5000,
+  });
 }

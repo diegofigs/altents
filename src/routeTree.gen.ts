@@ -11,10 +11,17 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as WithdrawImport } from './routes/withdraw'
 import { Route as DepositImport } from './routes/deposit'
 import { Route as IndexImport } from './routes/index'
 
 // Create/Update Routes
+
+const WithdrawRoute = WithdrawImport.update({
+  id: '/withdraw',
+  path: '/withdraw',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const DepositRoute = DepositImport.update({
   id: '/deposit',
@@ -46,6 +53,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DepositImport
       parentRoute: typeof rootRoute
     }
+    '/withdraw': {
+      id: '/withdraw'
+      path: '/withdraw'
+      fullPath: '/withdraw'
+      preLoaderRoute: typeof WithdrawImport
+      parentRoute: typeof rootRoute
+    }
   }
 }
 
@@ -54,36 +68,41 @@ declare module '@tanstack/react-router' {
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/deposit': typeof DepositRoute
+  '/withdraw': typeof WithdrawRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/deposit': typeof DepositRoute
+  '/withdraw': typeof WithdrawRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/deposit': typeof DepositRoute
+  '/withdraw': typeof WithdrawRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/deposit'
+  fullPaths: '/' | '/deposit' | '/withdraw'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/deposit'
-  id: '__root__' | '/' | '/deposit'
+  to: '/' | '/deposit' | '/withdraw'
+  id: '__root__' | '/' | '/deposit' | '/withdraw'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DepositRoute: typeof DepositRoute
+  WithdrawRoute: typeof WithdrawRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DepositRoute: DepositRoute,
+  WithdrawRoute: WithdrawRoute,
 }
 
 export const routeTree = rootRoute
@@ -97,7 +116,8 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/deposit"
+        "/deposit",
+        "/withdraw"
       ]
     },
     "/": {
@@ -105,6 +125,9 @@ export const routeTree = rootRoute
     },
     "/deposit": {
       "filePath": "deposit.tsx"
+    },
+    "/withdraw": {
+      "filePath": "withdraw.tsx"
     }
   }
 }

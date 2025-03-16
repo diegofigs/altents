@@ -3,9 +3,10 @@ import {
   arbitrum,
   aurora,
   base,
+  berachain,
+  gnosis,
   mainnet,
   polygon,
-  berachain,
 } from "wagmi/chains";
 
 export const config = getDefaultConfig({
@@ -17,6 +18,7 @@ export const config = getDefaultConfig({
     arbitrum,
     base,
     berachain,
+    gnosis,
     {
       ...aurora,
       iconUrl:

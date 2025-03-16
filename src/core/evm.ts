@@ -17,3 +17,23 @@ export const CHAIN_IDS: Record<string, number | undefined> = {
   gnosis: 100,
   berachain: 80094,
 };
+
+/**
+ * Chain IDs for EVM-compatible chains.
+ * Non-EVM chains are `undefined`.
+ */
+export const CHAIN_NAMES: Record<string, string | undefined> = {
+  eth: "Ethereum",
+  near: undefined,
+  base: "Base",
+  arbitrum: "Arbitrum",
+  bitcoin: undefined,
+  solana: undefined,
+  dogecoin: undefined,
+  turbochain: "Turbochain",
+  aurora: "Aurora",
+  xrpledger: undefined,
+  zcash: undefined,
+  gnosis: "Gnosis",
+  berachain: "Berachain",
+};

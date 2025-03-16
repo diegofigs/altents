@@ -486,7 +486,7 @@ export const LIST_TOKENS = [
         decimals: 18,
         icon: "https://s2.coinmarketcap.com/static/img/coins/128x128/14803.png",
         chainId: "",
-        chainIcon: "/static/icons/network/eth.svg",
+        chainIcon: "/static/icons/network/ethereum.svg",
         chainName: "eth",
         routes: [],
         symbol: "AURORA",
@@ -690,7 +690,7 @@ export const LIST_TOKENS = [
         decimals: 18,
         icon: "https://s2.coinmarketcap.com/static/img/coins/128x128/24911.png",
         chainId: "",
-        chainIcon: "/static/icons/network/eth.svg",
+        chainIcon: "/static/icons/network/ethereum.svg",
         chainName: "eth",
         routes: [],
         symbol: "TURBO",
@@ -951,6 +951,7 @@ export interface UnifiedAsset {
   address?: string;
   // Optionally track chainName, tags, etc.
   chainName?: string;
+  chainIcon?: string;
   tags?: string[];
   groupedTokens?: (typeof LIST_TOKENS)[number]["groupedTokens"];
 }
@@ -979,6 +980,7 @@ export function getUnifiedTokenList(): UnifiedAsset[] {
         decimals: chosen.decimals,
         icon: chosen.icon,
         chainName: chosen.chainName,
+        chainIcon: chosen.chainIcon,
         tags: tokenEntry.tags ?? [],
         address: chosen.address || tokenEntry.address,
         groupedTokens: tokenEntry.groupedTokens,
@@ -992,6 +994,7 @@ export function getUnifiedTokenList(): UnifiedAsset[] {
         decimals: tokenEntry.decimals ?? 18,
         icon: tokenEntry.icon,
         chainName: tokenEntry.chainName,
+        chainIcon: tokenEntry.chainIcon,
         tags: tokenEntry.tags ?? [],
         address: tokenEntry.address,
         groupedTokens: tokenEntry.groupedTokens,

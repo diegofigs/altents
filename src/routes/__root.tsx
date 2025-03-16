@@ -3,6 +3,7 @@ import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/router-devtools";
 import { FaGithub } from "react-icons/fa";
 import { ToastContainer } from "react-toastify";
+import GitTagBadge from "../components/GitTagBadge";
 
 export const Route = createRootRoute({
   component: () => {
@@ -20,6 +21,9 @@ export const Route = createRootRoute({
               <Link to="/" className="[&.active]:font-bold">
                 Swap
               </Link>{" "}
+              <Link to="/withdraw" className="[&.active]:font-bold">
+                Withdraw
+              </Link>{" "}
             </nav>
             <ConnectButton
               accountStatus="address"
@@ -28,9 +32,11 @@ export const Route = createRootRoute({
             />
           </header>
           <Outlet />
-          <footer className="py-4 px-6 w-full flex justify-end items-center border-t border-gray-700">
+          <footer
+            className="py-4 px-6 w-full flex justify-end items-center gap-2
+            border-t border-gray-700"
+          >
             <p className="text-sm text-gray-400 flex items-center space-x-2">
-              <span>made with ♥️ in 🇵🇷</span>
               <a
                 href="https://github.com/diegofigs/altents"
                 target="_blank"
@@ -40,10 +46,11 @@ export const Route = createRootRoute({
                 <FaGithub size={16} />
               </a>
             </p>
+            <GitTagBadge />
           </footer>
         </div>
-        <ToastContainer />
-        <TanStackRouterDevtools />
+        <ToastContainer theme="dark" />
+        {!import.meta.env.DEV && <TanStackRouterDevtools />}
       </>
     );
   },

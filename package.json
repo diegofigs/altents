@@ -4,9 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "VITE_GIT_TAG=$(git describe --tags) vite",
+    "build": "tsc -b && VITE_GIT_TAG=$(git describe --tags) vite build",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "@tailwindcss/vite": "^4.0.9",
     "@tanstack/react-query": "^5.67.1",
     "@tanstack/react-router": "^1.112.18",
+    "@vitejs/plugin-react": "^4.3.4",
     "@wagmi/cli": "^2.2.0",
     "crypto-browserify": "^3.12.1",
     "near-api-js": "^5.0.1",
@@ -34,8 +36,9 @@
     "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "@vitejs/plugin-react-swc": "^3.8.0",
+    "babel-plugin-react-compiler": "19.0.0-beta-bafa41b-20250307",
     "eslint": "^9.21.0",
+    "eslint-plugin-react-compiler": "19.0.0-beta-bafa41b-20250307",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.15.0",

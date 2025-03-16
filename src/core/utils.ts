@@ -80,6 +80,9 @@ export function transformERC191Signature(signature: string) {
 export function formatFixedPoint(value: bigint, decimals: number) {
   // Convert the BigInt to a string.
   let str = value.toString();
+  if (str === "0") {
+    return str;
+  }
 
   // If the string length is less than or equal to the decimals,
   // we need to pad the string with leading zeros.

@@ -2,41 +2,27 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { MdOutlineSwapVert } from "react-icons/md";
 import { toast } from "react-toastify";
+import { formatUnits, isAddress } from "viem";
 import { useAccount } from "wagmi";
-import { SplashScreen } from "../components/SplashScreen";
-import { TokenSelect } from "../components/TokenSelect";
+import { SelectWithIcon } from "../components/SelectWithIcon";
 import { config } from "../config";
 import {
   AggregatedAsset,
   fetchQuote,
-  fetchTokens,
   getDepositedBalances,
+  pollIntentStatus,
   publishIntent,
   Token,
 } from "../core";
-import { getUnifiedTokenList, UnifiedAsset } from "../core/tokens";
-import { formatFixedPoint, limitDecimals } from "../core/utils";
+import { getUnifiedTokenList } from "../core/tokens";
+import { Route as swapRoute } from "../routes/index";
 
-const tokenList = getUnifiedTokenList().reduce<Record<string, UnifiedAsset>>(
-  (acc, asset) => ({
-    ...acc,
-    [asset.defuse_asset_id]: asset,
-  }),
-  {},
-);
+const tokenList = getUnifiedTokenList();
 
 export function Swap() {
   const account = useAccount();
-  const address = account.address?.toLowerCase() || "";
-  const {
-    data: assets,
-    isFetching: isFetchingAssets,
-    error: errorAssets,
-  } = useQuery({
-    queryKey: ["tokens"],
-    queryFn: fetchTokens,
-    initialData: [],
-  });
+  const { address = "" } = account;
+  const assets = swapRoute.useLoaderData();
 
   const platformAssets = useMemo(() => {
     const assetsById = assets.reduce<Record<string, Token>>((acc, asset) => {
@@ -46,7 +32,7 @@ export function Swap() {
       };
     }, {});
     // Combine chain data (prices, deposit addresses, etc.) with official data
-    return [...Object.values(tokenList)]
+    return [...tokenList]
       .sort(({ chainName: chainNameA = "" }, { chainName: chainNameB = "" }) =>
         chainNameA < chainNameB ? -1 : chainNameA > chainNameB ? 1 : 0,
       )
@@ -57,24 +43,29 @@ export function Swap() {
   }, [assets]);
 
   const { data: balances } = useQuery({
-    queryKey: ["balances", address],
+    queryKey: ["balances", address.toLowerCase()],
     queryFn: () =>
       getDepositedBalances(
-        address,
-        assets.map((asset) => asset.defuse_asset_id),
+        address.toLowerCase(),
+        platformAssets.reduce<string[]>((acc, asset) => {
+          if (asset.groupedTokens) {
+            return [
+              ...acc,
+              asset.defuse_asset_id,
+              ...asset.groupedTokens.map((g) => g.defuseAssetId),
+            ];
+          }
+          return [...acc, asset.defuse_asset_id];
+        }, []),
       ),
-    enabled: assets.length > 0 && address !== "",
+    enabled: assets.length > 0 && isAddress(address),
   });
 
   // ------------------------
   // State variables
   // ------------------------
   const [amountIn, setAmountIn] = useState("1");
-
-  // Default token IDs (USDC in, NEAR out)
-  const [inputTokenId, setInputTokenId] = useState(
-    "nep141:aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
-  );
+  const [inputTokenId, setInputTokenId] = useState("nep141:aurora");
   const [outputTokenId, setOutputTokenId] = useState(
     "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
   );
@@ -82,51 +73,40 @@ export function Swap() {
   const assetIn = useMemo(
     () =>
       platformAssets.find((asset) => asset.defuse_asset_id === inputTokenId),
-    [platformAssets, inputTokenId],
+    [inputTokenId, platformAssets],
   );
   const assetOut = useMemo(
     () =>
       platformAssets.find((asset) => asset.defuse_asset_id === outputTokenId),
-    [platformAssets, outputTokenId],
+    [outputTokenId, platformAssets],
   );
 
-  const balanceAssetIn = useMemo(() => {
-    if (balances && assetIn) {
-      const bigBal = balances[assetIn.defuse_asset_id];
-      if (bigBal) {
-        return limitDecimals(formatFixedPoint(bigBal, assetIn.decimals), 2);
-      }
-    }
-    return "0";
-  }, [assetIn, balances]);
-
-  const balanceAssetOut = useMemo(() => {
-    if (balances && assetOut) {
-      const bigBal = balances[assetOut.defuse_asset_id];
-      if (bigBal) {
-        return limitDecimals(formatFixedPoint(bigBal, assetOut.decimals), 2);
-      }
-    }
-    return "0";
-  }, [assetOut, balances]);
+  const protocolBalanceAssetIn = useMemo(
+    () => calculateProtocolBalance(assetIn, balances),
+    [assetIn, balances],
+  );
+  const protocolBalanceAssetOut = useMemo(
+    () => calculateProtocolBalance(assetOut, balances),
+    [assetOut, balances],
+  );
 
   const handleMaxClick = () => {
     // Use the exact numeric balance if available
-    const max = parseFloat(balanceAssetIn);
+    const max = parseFloat(protocolBalanceAssetIn);
     if (!isNaN(max)) {
       // Overwrite the “From” amount with the user’s entire balance
       setAmountIn(String(max));
     }
   };
   const handleHalfClick = () => {
-    const max = parseFloat(balanceAssetIn);
+    const max = parseFloat(protocolBalanceAssetIn);
     if (!isNaN(max)) {
       // Overwrite with half
       setAmountIn(String(max / 2));
     }
   };
 
-  const handleSwapTokens = () => {
+  const handleTokenToggle = () => {
     const temp = inputTokenId;
     setInputTokenId(outputTokenId);
     setOutputTokenId(temp);
@@ -145,6 +125,7 @@ export function Swap() {
       });
     },
     enabled: !!assetIn && parseFloat(amountIn) > 0,
+    refetchInterval: 10_000,
   });
 
   const handleSwap = async () => {
@@ -158,34 +139,25 @@ export function Swap() {
     }
 
     try {
-      await publishIntent({
+      const res = await publishIntent({
         config,
-        address,
+        address: address.toLowerCase(),
         quote,
         inputTokenId,
         outputTokenId,
       });
-      toast.success("Swap intent published successfully!");
+
+      if (res && res.status === "OK") {
+        pollIntentStatus(res.intent_hash);
+      } else {
+        toast.error(`Failed to publish swap intent: ${res.intent_hash}`);
+      }
     } catch (err) {
       if (err instanceof Error) {
         toast.error(`Failed to publish swap intent: ${err.message}`);
       }
     }
   };
-
-  if (isFetchingAssets) {
-    return <SplashScreen />;
-  }
-
-  if (errorAssets) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-800">
-        <p className="text-red-400 font-semibold text-lg">
-          Error: {String(errorAssets)}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <main className="h-full flex-grow flex items-center justify-center px-4 py-8">
@@ -227,14 +199,18 @@ export function Swap() {
             <label className="block text-sm font-medium text-gray-400">
               Token
             </label>
-            <TokenSelect
-              options={platformAssets}
+            <SelectWithIcon
+              options={platformAssets.map((item) => ({
+                id: item.defuse_asset_id,
+                icon: item.icon || "",
+                name: item.symbol,
+              }))}
               selected={inputTokenId}
               onChange={setInputTokenId}
             />
             {/* Balance + Max/Half buttons */}
             <p className="mt-1 text-sm text-gray-400">
-              Balance: {balanceAssetIn}
+              Balance: {protocolBalanceAssetIn}
               {/* "Max" & "50%" buttons */}
               <button
                 onClick={handleMaxClick}
@@ -257,7 +233,7 @@ export function Swap() {
         {/* SWAP TOKENS BUTTON */}
         <div className="flex items-center justify-center mt-4">
           <button
-            onClick={handleSwapTokens}
+            onClick={handleTokenToggle}
             className="w-10 h-10 relative rounded-full bg-gray-800 
                 flex items-center justify-center hover:bg-gray-500 focus:outline-2"
             aria-label="Swap input and output tokens"
@@ -301,13 +277,17 @@ export function Swap() {
             <label className="block text-sm font-medium text-gray-400">
               Token
             </label>
-            <TokenSelect
-              options={platformAssets}
+            <SelectWithIcon
+              options={platformAssets.map((asset) => ({
+                id: asset.defuse_asset_id,
+                name: asset.symbol,
+                icon: asset.icon || "",
+              }))}
               selected={outputTokenId}
               onChange={setOutputTokenId}
             />
             <p className="mt-1 text-sm text-gray-400">
-              Balance: {balanceAssetOut}
+              Balance: {protocolBalanceAssetOut}
             </p>
           </div>
         </div>
@@ -340,4 +320,42 @@ export function Swap() {
       </div>
     </main>
   );
+}
+
+function calculateProtocolBalance(
+  assetIn: AggregatedAsset | undefined,
+  balances: { [x: string]: bigint } | undefined,
+) {
+  const targetAsset = assetIn;
+  if (balances && targetAsset) {
+    const balance = balances[targetAsset.defuse_asset_id] ?? BigInt(0);
+    if (targetAsset.groupedTokens) {
+      const aggBalance = targetAsset.groupedTokens.reduce((acc, variant) => {
+        const variantBalance = balances[variant.defuseAssetId];
+        if (variantBalance > 0) {
+          if (variant.decimals === targetAsset.decimals) {
+            return acc + variantBalance;
+          } else if (variant.decimals > targetAsset.decimals) {
+            return (
+              acc +
+              variantBalance /
+                BigInt(10 ** (variant.decimals - targetAsset.decimals))
+            );
+          } else {
+            return (
+              acc +
+              variantBalance *
+                BigInt(10 ** (variant.decimals - targetAsset.decimals))
+            );
+          }
+        }
+        return acc;
+      }, BigInt(0));
+      return formatUnits(balance + aggBalance, targetAsset.decimals);
+    }
+    if (balance) {
+      return formatUnits(balance, targetAsset.decimals);
+    }
+  }
+  return "0";
 }

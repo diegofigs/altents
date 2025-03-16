@@ -1,22 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Address, formatUnits, isAddress, parseEther, parseUnits } from "viem";
-import { useAccount, useBalance, useSendTransaction } from "wagmi";
-import DepositAddressPanel from "../components/DepositAddressPanel";
+import { formatUnits, isAddress, parseUnits } from "viem";
+import { useAccount } from "wagmi";
 import { SelectWithIcon } from "../components/SelectWithIcon";
-import { getDepositAddress } from "../core";
+import { config } from "../config";
+import {
+  getDepositedBalances,
+  pollIntentStatus,
+  publishWithdrawIntent,
+} from "../core";
 import { CHAIN_NAMES } from "../core/evm";
-import { useReadErc20, useWriteErc20Transfer } from "../generated";
 import { usePlatformAssets } from "../hooks/usePlatformAssets";
-import { useTxHashToast } from "../hooks/useTxHashToast";
-import { Route as depositRoute } from "../routes/deposit";
+import { Route as withdrawRoute } from "../routes/withdraw";
+import { toast } from "react-toastify";
 
-export function Deposit() {
+export function Withdraw() {
   const account = useAccount();
   const address = account.address?.toLowerCase() || "";
-  const assets = depositRoute.useLoaderData();
+  const assets = withdrawRoute.useLoaderData();
 
   const platformAssets = usePlatformAssets(assets);
+
+  const { data: balances } = useQuery({
+    queryKey: ["balances", address],
+    queryFn: () =>
+      getDepositedBalances(
+        address,
+        (assets || []).map((asset) => `nep141:${asset.near_token_id}`),
+        // (assets || []).map((asset) => `nep141:${asset.near_token_id}`),
+      ),
+    enabled: !!assets && assets.length > 0 && address !== "",
+  });
 
   // ------------------------
   // State variables for the user’s picks
@@ -31,13 +45,13 @@ export function Deposit() {
     string | null
   >(null);
 
-  const currentSymbolData = useMemo(() => {
+  const selectedAggregatedSymbol = useMemo(() => {
     return platformAssets.find((item) => item.symbol === selectedSymbol);
   }, [platformAssets, selectedSymbol]);
 
   const chainOptions = useMemo(
-    () => currentSymbolData?.chainVariants || [],
-    [currentSymbolData?.chainVariants],
+    () => selectedAggregatedSymbol?.chainVariants || [],
+    [selectedAggregatedSymbol?.chainVariants],
   );
 
   // If user hasn’t picked a chain yet, default to the first in the array
@@ -45,108 +59,55 @@ export function Deposit() {
     setSelectedDefuseAssetId(chainOptions[0].defuseAssetId);
   }
 
-  const currentChainVariant = useMemo(() => {
+  const selectedChainVariant = useMemo(() => {
     return chainOptions.find((c) => c.defuseAssetId === selectedDefuseAssetId);
   }, [chainOptions, selectedDefuseAssetId]);
 
-  const { data: depositAddress } = useQuery({
-    queryKey: ["depositAddress", selectedDefuseAssetId],
-    queryFn: () => {
-      if (selectedDefuseAssetId) {
-        const [chainType, chainId] = selectedDefuseAssetId.split(":");
-        return getDepositAddress({
-          accountId: address,
-          chain: `${chainType}:${chainId}`,
-        });
+  const protocolBalance = useMemo(() => {
+    if (balances && selectedAggregatedSymbol && selectedChainVariant) {
+      const balance =
+        balances[
+          selectedAggregatedSymbol.parentDefuseAssetId ||
+            selectedChainVariant.defuseAssetId
+        ];
+      if (balance) {
+        return formatUnits(balance, selectedChainVariant.decimals);
       }
-    },
-    enabled: selectedDefuseAssetId !== null && address !== "",
-  });
-
-  const selectedChainId =
-    selectedDefuseAssetId && selectedDefuseAssetId.split(":").length === 3
-      ? parseInt(selectedDefuseAssetId.split(":")[1])
-      : 0;
-  const { data: erc20Balance } = useReadErc20({
-    address: (currentChainVariant?.address || "") as Address,
-    chainId: selectedChainId ?? 1,
-    functionName: "balanceOf",
-    args: [address as Address],
-  });
-
-  const { data: nativeBalance } = useBalance({
-    address: address as Address,
-    chainId: selectedChainId ?? 1,
-  });
-
-  const { data: sendErc20TransferHash, writeContract: sendErc20Transfer } =
-    useWriteErc20Transfer();
-  console.log(sendErc20TransferHash);
-  useTxHashToast(sendErc20TransferHash);
-
-  const { data: sendNativeTransferHash, sendTransaction: sendNativeTransfer } =
-    useSendTransaction();
-  console.log(sendNativeTransferHash);
-  useTxHashToast(sendNativeTransferHash);
+    }
+    return "0";
+  }, [balances, selectedChainVariant, selectedAggregatedSymbol]);
 
   const handleMaxClick = () => {
-    if (
-      currentChainVariant &&
-      currentChainVariant.address === "native" &&
-      nativeBalance
-    ) {
-      setAmountIn(formatUnits(nativeBalance.value, nativeBalance.decimals));
-    } else if (
-      currentChainVariant &&
-      currentChainVariant.address !== "native" &&
-      erc20Balance
-    ) {
-      setAmountIn(formatUnits(erc20Balance, currentChainVariant.decimals));
+    const max = parseFloat(protocolBalance);
+    if (!isNaN(max)) {
+      setAmountIn(String(max));
     }
   };
 
   const handleHalfClick = () => {
-    if (
-      currentChainVariant &&
-      currentChainVariant.address === "native" &&
-      nativeBalance
-    ) {
-      setAmountIn(
-        formatUnits(nativeBalance.value / BigInt(2), nativeBalance.decimals),
-      );
-    } else if (
-      currentChainVariant &&
-      currentChainVariant.address !== "native" &&
-      erc20Balance
-    ) {
-      setAmountIn(
-        formatUnits(erc20Balance / BigInt(2), currentChainVariant.decimals),
-      );
+    const max = parseFloat(protocolBalance);
+    if (!isNaN(max)) {
+      setAmountIn(String(max / 2));
     }
   };
 
-  const handleDeposit = async () => {
+  const handleWithdraw = async () => {
     if (
       amountIn &&
-      selectedSymbol &&
-      currentChainVariant &&
-      depositAddress &&
-      isAddress(depositAddress) &&
+      selectedAggregatedSymbol &&
+      selectedChainVariant &&
       isAddress(address)
     ) {
-      if (currentChainVariant.address === "native") {
-        sendNativeTransfer({
-          to: depositAddress,
-          value: parseEther(amountIn),
-        });
+      const res = await publishWithdrawIntent({
+        config,
+        nearToken: selectedChainVariant.nearTokenId,
+        address,
+        amount: parseUnits(amountIn, selectedChainVariant.decimals).toString(),
+      });
+      if (res && res.status === "OK") {
+        pollIntentStatus(res.intent_hash);
       } else {
-        sendErc20Transfer({
-          address: address,
-          args: [
-            depositAddress,
-            parseUnits(amountIn, currentChainVariant.decimals),
-          ],
-        });
+        toast.error("Failed to publish withdraw intent.");
       }
     }
   };
@@ -223,10 +184,7 @@ export function Deposit() {
 
             {/* Balance + Max/Half buttons */}
             <p className="mt-1 text-sm text-gray-400">
-              Balance:{" "}
-              {currentChainVariant?.address === "native" && nativeBalance
-                ? formatUnits(nativeBalance.value, nativeBalance.decimals)
-                : erc20Balance?.toString()}
+              Balance: {protocolBalance}
               <button
                 onClick={handleMaxClick}
                 className="ml-2 text-xs text-blue-300 bg-gray-500 cursor-pointer
@@ -245,19 +203,17 @@ export function Deposit() {
           </div>
         )}
 
-        <DepositAddressPanel address={depositAddress || ""} />
-
         {/* DEPOSIT BUTTON */}
         <button
-          onClick={handleDeposit}
-          disabled={!address || !currentChainVariant}
+          onClick={handleWithdraw}
+          disabled={!address || !selectedChainVariant}
           className="w-full py-3 mt-6 rounded-full text-lg font-semibold text-gray-100 
             bg-gradient-to-r from-blue-500 to-blue-600 
             hover:from-blue-600 hover:to-blue-700 focus:outline-none 
             focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors 
             disabled:opacity-50"
         >
-          Deposit
+          Withdraw
         </button>
       </div>
     </main>
