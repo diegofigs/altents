@@ -81,12 +81,10 @@ export function Deposit() {
 
   const { data: sendErc20TransferHash, writeContract: sendErc20Transfer } =
     useWriteErc20Transfer();
-  console.log(sendErc20TransferHash);
   useTxHashToast(sendErc20TransferHash);
 
   const { data: sendNativeTransferHash, sendTransaction: sendNativeTransfer } =
     useSendTransaction();
-  console.log(sendNativeTransferHash);
   useTxHashToast(sendNativeTransferHash);
 
   const handleMaxClick = () => {
